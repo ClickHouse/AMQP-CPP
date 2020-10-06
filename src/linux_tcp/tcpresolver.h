@@ -77,11 +77,6 @@ private:
      *  @var TcpBuffer
      */
     TcpOutBuffer _buffer;
-    
-    /**
-     *  Thread in which the DNS lookup occurs
-     *  @var std::thread
-     */
 
     /**
      *  Run the thread
