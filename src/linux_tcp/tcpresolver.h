@@ -78,11 +78,6 @@ private:
      *  @var TcpBuffer
      */
     TcpOutBuffer _buffer;
-    
-    /**
-     *  Thread in which the DNS lookup occurs
-     *  @var std::thread
-     */
 
     /**
      *  How should the addresses be ordered when we want to connect
