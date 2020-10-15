@@ -1,10 +1,10 @@
 /**
  *  OpenSSL.h
- * 
- *  Header file in which we list all openssl functions in our own namespace 
- *  that we call instead of the actual openssl functions. This allows us to 
+ *
+ *  Header file in which we list all openssl functions in our own namespace
+ *  that we call instead of the actual openssl functions. This allows us to
  *  intercept the calls and forward them to a dynamically loaded namespace
- *  
+ *
  *  @author Emiel Bruijntjes <emiel.bruijntjes@copernica.com>
  *  @copyright 2018 Copernica BV
  */
@@ -49,8 +49,8 @@ int      SSL_use_certificate_file(SSL *ssl, const char *file, int type);
 void     SSL_set_connect_state(SSL *ssl);
 void     SSL_CTX_free(SSL_CTX *ctx);
 void     SSL_free(SSL *ssl);
-long     SSL_ctrl(SSL *ssl, int cmd, long larg, void *parg);
-long     SSL_CTX_ctrl(SSL_CTX *ctx, int cmd, long larg, void *parg);
+int      SSL_set_tlsext_host_name(SSL *ssl, const char *name);
+uint32_t SSL_CTX_set_mode(SSL_CTX *ctx, uint32_t mode);
 int      SSL_CTX_set_default_verify_paths(SSL_CTX *ctx);
 void     ERR_clear_error(void);
 void     ERR_print_errors_cb(int (*cb)(const char *str, size_t len, void *u), void *u);
