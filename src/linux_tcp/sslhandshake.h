@@ -120,7 +120,7 @@ public:
         OpenSSL::SSL_set_connect_state(_ssl);
 
         // associate domain name with the connection
-        OpenSSL::SSL_set_tlsext_host_name(_ssl, hostname.data());
+        OpenSSL::SSL_set_tlsext_host_name_func(_ssl, hostname.data());
 
         // associate the ssl context with the socket filedescriptor
         if (OpenSSL::SSL_set_fd(_ssl, _socket) == 0) throw std::runtime_error("failed to associate filedescriptor with ssl socket");

@@ -307,15 +307,26 @@ void ERR_clear_error()
 }
 
 
-int SSL_set_tlsext_host_name(SSL *ssl, const char *name)
+/// SSL_set_tlsext_host_name is a function in BoringSSL but macro in OpenSSL. Wrap into function.
+static int SSL_set_tlsext_host_name_impl(SSL *ssl, const char *name)
 {
-    static Function<decltype(::SSL_set_tlsext_host_name)> func(handle, "SSL_set_tlsext_host_name");
+    return SSL_set_tlsext_host_name(ssl, name);
+}
+
+int SSL_set_tlsext_host_name_func(SSL *ssl, const char *name)
+{
+    static Function<decltype(SSL_set_tlsext_host_name_impl)> func(handle, "SSL_set_tlsext_host_name");
     return func(ssl, name);
 }
 
-uint32_t SSL_CTX_set_mode(SSL_CTX *ctx, uint32_t mode)
+static uint32_t SSL_CTX_set_mode_impl(SSL_CTX *ctx, uint32_t mode)
 {
-    static Function<decltype(::SSL_CTX_set_mode)> func(handle, "SSL_CTX_set_mode");
+    return SSL_CTX_set_mode(ctx, mode);
+}
+
+uint32_t SSL_CTX_set_mode_func(SSL_CTX *ctx, uint32_t mode)
+{
+    static Function<decltype(SSL_CTX_set_mode_impl)> func(handle, "SSL_CTX_set_mode");
     return func(ctx, mode);
 }
 
