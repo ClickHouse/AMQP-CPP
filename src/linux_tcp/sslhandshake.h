@@ -4,7 +4,7 @@
  *  Implementation of the TCP state that is responsible for setting
  *  up the STARTTLS handshake.
  *
- *  @copyright 2018 Copernica BV
+ *  @copyright 2018 - 2021 Copernica BV
  */
 
 /**
@@ -32,6 +32,12 @@ namespace AMQP {
 class SslHandshake : public TcpExtState
 {
 private:
+    /**
+     *  Ssl context
+     *  @var SslContext
+     */
+    SslContext _ctx;
+
     /**
      *  SSL structure
      *  @var SslWrapper
@@ -113,9 +119,13 @@ public:
      */
     SslHandshake(TcpExtState *state, const std::string &hostname, TcpOutBuffer &&buffer) :
         TcpExtState(state),
-        _ssl(SslContext(OpenSSL::TLS_client_method())),
+        _ctx(OpenSSL::TLS_client_method()),
+        _ssl(_ctx),
         _out(std::move(buffer))
     {
+        // use the default directories for verifying certificates
+        OpenSSL::SSL_CTX_set_default_verify_paths(_ctx);
+
         // we will be using the ssl context as a client
         OpenSSL::SSL_set_connect_state(_ssl);
 
@@ -124,6 +134,9 @@ public:
 
         // associate the ssl context with the socket filedescriptor
         if (OpenSSL::SSL_set_fd(_ssl, _socket) == 0) throw std::runtime_error("failed to associate filedescriptor with ssl socket");
+
+        // we allow userspace to make changes to the SSL structure
+        if (!_parent->onSecuring(this, _ssl)) throw std::runtime_error("failed to initialize SSL structure in user space");
 
         // we are going to wait until the socket becomes writable before we start the handshake
         _parent->onIdle(this, _socket, writable);

@@ -10,13 +10,13 @@
 #       ON:  Build posix handler implementation
 #       OFF: Don't build posix handler implementation
 
-cmake_minimum_required(VERSION 3.2 FATAL_ERROR)
+cmake_minimum_required(VERSION 3.4 FATAL_ERROR)
 
 # project name
 project(amqpcpp)
 set (VERSION_MAJOR 4)
-set (VERSION_MINOR 2)
-set (VERSION_PATCH 1)
+set (VERSION_MINOR 3)
+set (VERSION_PATCH 11)
 set (SO_VERSION ${VERSION_MAJOR}.${VERSION_MINOR})
 
 # build options
@@ -129,4 +129,7 @@ target_include_directories(${PROJECT_NAME} SYSTEM PUBLIC
 
 if(AMQP-CPP_LINUX_TCP)
     target_link_libraries(${PROJECT_NAME} ${CMAKE_DL_LIBS})
+    # Find OpenSSL and provide include dirs
+    find_package(OpenSSL REQUIRED)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${OPENSSL_INCLUDE_DIR})
 endif()
