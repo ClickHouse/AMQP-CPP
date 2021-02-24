@@ -52,6 +52,9 @@ void     SSL_CTX_free(SSL_CTX *ctx);
 void     SSL_free(SSL *ssl);
 int      SSL_set_tlsext_host_name_func(SSL *ssl, const char *name);
 uint32_t SSL_CTX_set_mode_func(SSL_CTX *ctx, uint32_t mode);
+// ?
+int      SSL_CTX_set_default_verify_paths(SSL_CTX *ctx);
+
 void     ERR_clear_error(void);
 
 /**

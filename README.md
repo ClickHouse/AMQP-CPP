@@ -2,7 +2,7 @@ AMQP-CPP
 ========
 
 [![Build Status](https://travis-ci.org/CopernicaMarketingSoftware/AMQP-CPP.svg?branch=master)](https://travis-ci.org/CopernicaMarketingSoftware/AMQP-CPP)
-[![Build status](https://ci.appveyor.com/api/projects/status/7xoc4y0flm0045yy/branch/master?svg=true)](https://ci.appveyor.com/project/mvdwerve/amqp-cpp/branch/master)
+[![Build status](https://ci.appveyor.com/api/projects/status/heh4n7gjwgqcugfn/branch/master?svg=true)](https://ci.appveyor.com/project/copernica/amqp-cpp/branch/master)
 
 **Are you upgrading from AMQP-CPP 3 to AMQP-CPP 4?** [Please read the upgrade instructions](#upgrading)
 
@@ -34,7 +34,7 @@ connections, setting it up is just as easy.
 AMQP-CPP is fully asynchronous and does not do any blocking (system) calls, so
 it can be used in high performance applications without the need for threads.
 
-The AMQP-CPP library uses C++11 features, so if you intend use it, please make
+The AMQP-CPP library uses C++11 features, so if you intend to use it, please make
 sure that your compiler is up-to-date and supports C++11.
 
 **Note for the reader:** This readme file has a peculiar structure. We start
@@ -994,27 +994,15 @@ in almost any form:
 /**
  *  Publish a message to an exchange
  * 
- *  You have to supply the name of an exchange and a routing key. RabbitMQ will 
- *  then try to send the message to one or more queues. With the optional flags 
- *  parameter you can specify what should happen if the message could not be routed 
- *  to a queue. By default, unroutable message are silently discarded.
+ *  You have to supply the name of an exchange and a routing key. RabbitMQ will then try
+ *  to send the message to one or more queues. With the optional flags parameter you can
+ *  specify what should happen if the message could not be routed to a queue. By default,
+ *  unroutable message are silently discarded.
  * 
- *  This method returns a reference to a DeferredPublisher object. You can use 
- *  this returned object to install callbacks that are called when an undeliverable 
- *  message is returned, or to set the callback that is called when the server 
- *  confirms that the message was received. 
- * 
- *  To enable handling returned messages, or to enable publisher-confirms, you must 
- *  not only set the callback, but also pass in appropriate flags to enable this 
- *  feature. If you do not pass in these flags, your callbacks will not be called. 
- *  If you are not at all interested in returned messages or publish-confirms, you 
- *  can ignore the flag and the returned object.
- * 
- *  Watch out: the channel returns _the same_ DeferredPublisher object for all 
- *  calls to the publish() method. This means that the callbacks that you install 
- *  for the first published message are also used for subsequent messages _and_ 
- *  it means that if you install a different callback for a later publish 
- *  operation, it overwrites your earlier callbacks 
+ *  If you set the 'mandatory' and/or 'immediate' flag, messages that could not be handled 
+ *  are returned to the application. Make sure that you have called the recall()-method and
+ *  have set up all appropriate handlers to process these returned messages before you start
+ *  publishing.
  * 
  *  The following flags can be supplied:
  * 
@@ -1028,16 +1016,17 @@ in almost any form:
  *  @param  size        size of the message
  *  @param  flags       optional flags
  */
-DeferredPublisher &publish(const std::string &exchange, const std::string &routingKey, const Envelope &envelope, int flags = 0) { return _implementation->publish(exchange, routingKey, envelope, flags); }
-DeferredPublisher &publish(const std::string &exchange, const std::string &routingKey, const std::string &message, int flags = 0) { return _implementation->publish(exchange, routingKey, Envelope(message.data(), message.size()), flags); }
-DeferredPublisher &publish(const std::string &exchange, const std::string &routingKey, const char *message, size_t size, int flags = 0) { return _implementation->publish(exchange, routingKey, Envelope(message, size), flags); }
-DeferredPublisher &publish(const std::string &exchange, const std::string &routingKey, const char *message, int flags = 0) { return _implementation->publish(exchange, routingKey, Envelope(message, strlen(message)), flags); }
+bool publish(const std::string &exchange, const std::string &routingKey, const Envelope &envelope, int flags = 0) { return _implementation->publish(exchange, routingKey, envelope, flags); }
+bool publish(const std::string &exchange, const std::string &routingKey, const std::string &message, int flags = 0) { return _implementation->publish(exchange, routingKey, Envelope(message.data(), message.size()), flags); }
+bool publish(const std::string &exchange, const std::string &routingKey, const char *message, size_t size, int flags = 0) { return _implementation->publish(exchange, routingKey, Envelope(message, size), flags); }
+bool publish(const std::string &exchange, const std::string &routingKey, const char *message, int flags = 0) { return _implementation->publish(exchange, routingKey, Envelope(message, strlen(message)), flags); }
 ````
 
 Published messages are normally not confirmed by the server, and the RabbitMQ
 will not send a report back to inform you whether the message was successfully
 published or not. But with the flags you can instruct RabbitMQ to send back
-the message if it was undeliverable.
+the message if it was undeliverable. In you use these flags you must also install
+callbacks that will process these bounced messages.
 
 You can also use transactions to ensure that your messages get delivered.
 Let's say that you are publishing many messages in a row. If you get
@@ -1075,39 +1064,159 @@ and consuming.
 PUBLISHER CONFIRMS
 ===================
 
-RabbitMQ supports lightweight method of confirming that broker received and processed
-a message. For this method to work, the channel needs to be put in so-called _confirm mode_.
-This is done using confirmSelect() method. When channel is successfully put in 
-confirm mode, the server and client count messages (starting from 1) and server sends
-acknowledgments for every message it processed (it can also acknowledge multiple message at
-once). 
+RabbitMQ supports a lightweight method of confirming that broker received 
+and  processed a message. When you enable this, RabbitMQ sends back an 
+'ack' or 'nack' for each publish-operation. For this to work, the channel 
+needs to be put in _confirm mode_. This is done using the
+confirmSelect() method. When the channel is successfully put in confirm mode, 
+the server starts counting the received messages (starting from 1) and sends 
+acknowledgments for every message it processed (it can also acknowledge 
+multiple message at once). 
 
-If server is unable to process a message, it will send send negative acknowledgments. Both 
-positive and negative acknowledgments handling are implemented as callbacks for Channel object.
+If server is unable to process a message, it will send send negative 
+acknowledgments. Both positive and negative acknowledgments handling are 
+passed to callbacks that you can install on the object that
+is returned by the confirmSelect() method:
 
 ````c++
-// setup confirm mode and ack/nack callbacks
+// setup confirm mode and ack/nack callbacks (from this moment onwards 
+// ack/nack confirmations are coming in)
 channel.confirmSelect().onSuccess([&]() {
-    // from this moment onwards ack/nack confirmations are coming in
 
+    // publish the first message (this will be acked/nacked with deliveryTag=1)
     channel.publish("my-exchange", "my-key", "my first message");
-    // message counter is now 1, will call onAck/onNack with deliveryTag=1
 
+    // publish the second message (this will be acked/nacked with deliveryTag=2)
     channel.publish("my-exchange", "my-key", "my second message");
-    // message counter is now 2, will call onAck/onNack with deliveryTag=2
 
 }).onAck([&](uint64_t deliveryTag, bool multiple) {
+
     // deliveryTag is message number
     // multiple is set to true, if all messages UP TO deliveryTag have been processed
+
 }).onNack([&](uint64 deliveryTag, bool multiple, bool requeue) {
+
     // deliveryTag is message number
     // multiple is set to true, if all messages UP TO deliveryTag have not been processed
     // requeue is to be ignored
+
 });
 
 ````
 
-For more information, please see http://www.rabbitmq.com/confirms.html.
+If you use this feature, you will have to implement your own bookkeeping to
+track which messages have already been acked/nacked, and which messages 
+are still being handled. For your convenience however, the AMQP-CPP library
+comes with a number of helper classes that can take over this responsibility.
+
+The AMQP::Reliable class is an optional wrapper around channels. When you use
+it, your underlying channel is automatically put it _confirm method_, and all publish
+operations are individually acknowledged:
+
+````c++
+// create a channel
+AMQP::TcpChannel mychannel(connection);
+
+// wrap the channel into a reliable-object so that publish-opertions are
+// individually confirmed (after wrapping the channel, it is recommended
+// to no longer make direct calls to the channel)
+AMQP::Reliable reliable(mychannel);
+
+// publish a message via the reliable-channel
+reliable.publish("my-exchange", "my-key", "my first message").onAck([]() {
+
+    // the message has been acknowledged by RabbitMQ (in your application
+    // code you can now safely discard the message as it has been picked up)
+
+}).onNack([]() {
+
+    // the message has _explicitly_ been nack'ed by RabbitMQ (in your application
+    // code you probably want to log or handle this to avoid data-loss)
+
+}).onError([](const char *message) {
+
+    // a channel-error occured before any ack or nack was received, and the 
+    // message is probably lost too (which you want to handle)
+
+}).onLost([]() {
+
+    // because the implementation for onNack() and onError() will be the same
+    // in many applications, you can also choose to install a onLost() handler,
+    // which is called when the message has either been nack'ed, or lost.
+
+});
+
+````
+
+In the above example we have implemented four callback methods. In a real life
+application, implementing the onAck() and onLost() is normally sufficient.
+
+Publisher-confirms are often useful in situations where you need reliability.
+If you want to have certainty about whether your message was handled by RabbitMQ
+or not, you can enable this feature, either by explicitly calling channel.confirmSelect()
+if you want to do your own bookkeeping, or using AMQP::Reliable for a simpler
+API.
+
+But it also is useful for flood prevention. RabbitMQ turns out not to be very
+good at handling big loads of publish-operations. If you publish messages faster 
+than RabbitMQ can handle, a server-side buffer builds up, and RabbitMQ gets slow 
+(which causes the buffer to build up even further, et cetera). With publish-confirms
+you can keep the messages in your own application, and only proceed with publishing
+them when your previous messages have been handled. With this approach you
+prevent that RabbitMQ gets overloaded. We call it throttling.
+
+You can build your own throttling mechanism using the confirmSelect() approach
+or the AMQP::Reliable class. Or you use AMQP::Throttle:
+
+````c++
+// create a channel
+AMQP::TcpChannel mychannel(connection);
+
+// create a throttle (do not publish more than 20 messages at once) (after
+// wrapping the channel in a throttle you should no longer call any of the
+// channel-methods directly)
+AMQP::Throttle throttle(connection, 20);
+
+// publish way more messages than RabbitMQ can handle (the Throttle class
+// will make sure that messages are buffered inside your application if
+// there are more than 20 unacked messages)
+for (size_t i = 0; i < 100000; ++i)
+{
+    // publish a message
+    throttle.publish("my-exchange", "my-key", "my first message");
+}
+````
+
+The AMQP::Reliable and AMQP::Throttle classes both wrap around a channel.
+But what if you want to use both? You want to throttle messages, but also like
+to install your own callbacks for onAck and onLost? This is possible too:
+
+````c++
+// create a channel
+AMQP::TcpChannel mychannel(connection);
+
+// create a throttle that allows reliable-publishing
+AMQP::Throttle<AMQP::Reliable> throttle(connection, 20);
+
+// publish way more messages than RabbitMQ can handle (the Throttle class
+// will make sure that messages are buffered inside your application if
+// there are more than 20 unacked messages)
+for (size_t i = 0; i < 100000; ++i)
+{
+    // publish a message
+    throttle.publish("my-exchange", "my-key", "my first message").onAck([]() {
+    
+        // @todo add your own code
+    
+    }).onLost([]() {
+    
+        // @todo add your own code
+    
+    });
+}
+````
+
+For more information, see http://www.rabbitmq.com/confirms.html.
 
 CONSUMING MESSAGES
 ==================

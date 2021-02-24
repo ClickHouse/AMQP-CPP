@@ -24,6 +24,7 @@
 #include "sslhandshake.h"
 #include <thread>
 #include <netinet/in.h>
+#include <poll.h>
 
 /**
  *  Set up namespace
@@ -71,12 +72,19 @@ private:
      *  @var std::string
      */
     std::string _error;
-    
+
     /**
      *  Data that was sent to the connection, while busy resolving the hostname
      *  @var TcpBuffer
      */
     TcpOutBuffer _buffer;
+
+    /**
+     *  How should the addresses be ordered when we want to connect
+     *  @var ConnectionOrdre
+     */
+    ConnectionOrder _order;
+
 
     /**
      *  Run the thread
@@ -90,10 +98,10 @@ private:
             if (_secure && !OpenSSL::valid()) throw std::runtime_error("Secure connection cannot be established: libssl.so cannot be loaded");
             
             // get address info
-            AddressInfo addresses(_hostname.data(), _port);
+            AddressInfo addresses(_hostname.data(), _port, _order);
     
-            // an fdset to monitor for writability
-            fd_set writeset;
+            // the pollfd structure, needed for poll()
+            pollfd fd;
     
             // iterate over the addresses
             for (size_t i = 0; i < addresses.size(); ++i)
@@ -110,17 +118,22 @@ private:
                 // try to connect non-blocking
                 if (connect(_socket, addresses[i]->ai_addr, addresses[i]->ai_addrlen) == 0) break;
 
-                // we set the timeout to a timeout, with 5 seconds as the default
-                struct timeval timeout{_timeout,0};
+                // set the struct members
+                fd.fd = _socket;
+                fd.events = POLLOUT;
+                fd.revents = 0;
+                
+                // the return code
+                int ret = 0;
 
-                // reset the fdset
-                FD_ZERO(&writeset);
+                // keep looping until we get a 'final' result
+                do
+                {
+                    // perform the poll, with a very long time to allow the event to occur
+                    ret = poll(&fd, 1, _timeout * 1000);
 
-                // set the fd to monitor for writing
-                FD_SET(_socket, &writeset);
-
-                // perform a select, wait for something to happen on one of the fds
-                int ret = select(_socket + 1, nullptr, &writeset, nullptr, &timeout);
+                // we want to retry if the call was interrupted by a signal
+                } while (ret == -1 && errno == EINTR);
 
                 // log the error for the time being
                 if (ret == 0) _error = "connection timed out";
@@ -184,13 +197,15 @@ public:
      *  @param  portnumber  The portnumber for the lookup
      *  @param  secure      Do we need a secure tls connection when ready?
      *  @param  timeout     timeout per connection attempt
+     *  @param  order       How should we oreder the addresses of the host to connect to
      */
-    TcpResolver(TcpParent *parent, std::string hostname, uint16_t port, bool secure, int timeout) : 
+    TcpResolver(TcpParent *parent, std::string hostname, uint16_t port, bool secure, int timeout, const ConnectionOrder &order) : 
         TcpExtState(parent), 
         _hostname(std::move(hostname)),
         _secure(secure),
         _port(port),
-        _timeout(timeout)
+        _timeout(timeout),
+        _order(order)
     {
         // tell the event loop to monitor the filedescriptor of the pipe
         parent->onIdle(this, _pipe.in(), readable);

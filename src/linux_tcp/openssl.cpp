@@ -294,6 +294,20 @@ int SSL_use_certificate_file(SSL *ssl, const char *file, int type)
 }
 
 /**
+ *  Specify that the default location from which CA certificates are loaded
+ *  should be used.
+ *  @param  ctx
+ */
+int SSL_CTX_set_default_verify_paths(SSL_CTX *ctx)
+{
+    // the actual function
+    static Function<decltype(::SSL_CTX_set_default_verify_paths)> func(handle, "SSL_CTX_set_default_verify_paths");
+
+    // call actual function
+    return func(ctx);
+}
+
+/**
  *  Clear the SSL error queue
  *  @return void
  */
