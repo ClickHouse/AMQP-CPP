@@ -24,14 +24,14 @@ Table::Table(InBuffer &frame)
         bytesToRead -= (uint32_t)(name.size() + 1);
 
         // get the field
-        Field *field = Field::decode(frame);
+        auto field = Field::decode(frame);
         if (!field) continue;
-
-        // add field
-        _fields[name] = std::shared_ptr<Field>(field);
 
         // subtract size
         bytesToRead -= (uint32_t)field->size();
+
+        // add field
+        _fields[name] = std::move(field);
     }
 }
 
@@ -67,8 +67,10 @@ Table &Table::operator=(const Table &table)
     // loop through the table records
     for (auto iter = table._fields.begin(); iter != table._fields.end(); iter++)
     {
-        // add the field
-        _fields[iter->first] = std::shared_ptr<Field>(iter->second->clone());
+        // since a map is always ordered, we know that each element will
+        // be inserted at the end of the new map, so we can simply use
+        // emplace_hint and hint at insertion at the end of the map
+        _fields.insert(_fields.end(), std::make_pair(iter->first, iter->second->clone()));
     }
 
     // done
