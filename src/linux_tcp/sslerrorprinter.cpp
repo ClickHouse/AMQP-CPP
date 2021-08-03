@@ -9,6 +9,7 @@
 /**
  *  Dependencies
  */
+#include <cstring>
 #include "sslerrorprinter.h"
 
 /**
