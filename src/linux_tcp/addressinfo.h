@@ -12,6 +12,7 @@
  */
 #include <random>
 #include "connectionorder.h"
+#include <netinet/in.h>
 
 /**
  *  Include guard
