@@ -10,7 +10,6 @@
  *  Dependencies
  */
 #include "sslerrorprinter.h"
-#include <cstring>
 
 /**
  *  Begin namespace
