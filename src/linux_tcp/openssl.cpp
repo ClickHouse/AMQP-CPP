@@ -102,7 +102,7 @@ int SSL_read(SSL *ssl, void *buf, int num)
 }
 
 /**
- *  Read data from an ssl socket
+ *  Write data to an ssl socket
  *  @param  ssl     ssl structure
  *  @param  buf     buffer to write
  *  @param  num     size of buffer
@@ -344,6 +344,20 @@ uint32_t SSL_CTX_set_mode_func(SSL_CTX *ctx, uint32_t mode)
     return func(ctx, mode);
 }
 
+
+/**
+ *  Print errors via a callback
+ *  @param  cb
+ *  @param  u
+ */
+void ERR_print_errors_cb(int (*cb)(const char *str, size_t len, void *u), void *u)
+{
+    // the actual function
+    static Function<decltype(::ERR_print_errors_cb)> func(handle, "ERR_print_errors_cb");
+
+    // call the openssl function
+    func(cb, u);
+}
 
 /**
  *  End of namespace

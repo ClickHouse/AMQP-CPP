@@ -133,7 +133,7 @@ private:
      *
      *  @var std::queue
      */
-    std::queue<std::pair<bool, CopiedBuffer>> _queue;
+    std::queue<CopiedBuffer> _queue;
 
     /**
      *  Are we currently operating in synchronous mode? Meaning: do we first have
@@ -212,13 +212,14 @@ public:
      *  Callback that is called when the channel was succesfully created.
      *  @param  callback    the callback to execute
      */
-    void onReady(const SuccessCallback &callback)
+    inline void onReady(const SuccessCallback& callback) { return onReady(SuccessCallback(callback)); }
+    void onReady(SuccessCallback&& callback)
     {
         // store callback
-        _readyCallback = callback;
+        _readyCallback = std::move(callback);
 
         // direct call if channel is already ready
-        if (_state == state_ready && callback) callback();
+        if (_state == state_ready && _readyCallback) _readyCallback();
     }
 
     /**
@@ -229,7 +230,8 @@ public:
      *
      *  @param  callback    the callback to execute
      */
-    void onError(const ErrorCallback &callback);
+    inline void onError(const ErrorCallback& callback) { return onError(ErrorCallback(callback)); }
+    void onError(ErrorCallback&& callback);
 
     /**
      *  Pause deliveries on a channel
@@ -609,8 +611,9 @@ public:
     /**
      *  Signal the channel that a synchronous operation was completed, and that any
      *  queued frames can be sent out.
+     *  @return false if an error on the connection level occurred, true if not
      */
-    void flush();
+    bool flush();
 
     /**
      *  Report to the handler that the channel is opened
@@ -672,15 +675,21 @@ public:
         // skip if there is no oldest callback
         if (!_oldestCallback) return true;
 
-        // flush the queue, which will send the next operation if the current operation was synchronous
-        flush();
-        
         // we are going to call callbacks that could destruct the channel
         Monitor monitor(this);
+
+        // flush the queue, which will send the next operation if the current operation was synchronous
+        flush();
+
+        // the call to flush may have resulted in a call to reportError
+        if (!monitor.valid()) return false;
 
         // copy the callback (so that it will not be destructed during
         // the "reportSuccess" call, if the channel is destructed during the call)
         auto cb = _oldestCallback;
+
+        // the call to flush might have caused the callback to have been invoked; check once more
+        if (!cb) return true;
 
         // call the callback
         auto next = cb->reportSuccess(std::forward<Arguments>(parameters)...);

@@ -8,7 +8,6 @@
 #include "includes.h"
 #include "basicgetokframe.h"
 #include "basicreturnframe.h"
-#include "consumedmessage.h"
 #include "returnedmessage.h"
 #include "channelopenframe.h"
 #include "channelflowframe.h"
@@ -66,34 +65,34 @@ ChannelImpl::~ChannelImpl()
  *
  *  @param  callback    the callback to execute
  */
-void ChannelImpl::onError(const ErrorCallback &callback)
+void ChannelImpl::onError(ErrorCallback&& callback)
 {
     // store callback
-    _errorCallback = callback;
+    _errorCallback = std::move(callback);
 
     // if the channel is usable, all is ok
     if (usable()) return;
 
     // validity check
-    if (!callback) return;
+    if (!_errorCallback) return;
 
     // is the channel closing down?
-    if (_state == state_closing) return callback("Channel is closing down");
+    if (_state == state_closing) return _errorCallback("Channel is closing down");
 
     // the channel is closed, but what is the connection doing?
-    if (_connection == nullptr) return callback("Channel is not linked to a connection");
+    if (_connection == nullptr) return _errorCallback("Channel is not linked to a connection");
     
     // if the connection is valid, this is a pure channel error
-    if (_connection->ready()) return callback("Channel is in an error state, but the connection is valid");
+    if (_connection->ready()) return _errorCallback("Channel is in an error state, but the connection is valid");
 
     // the connection is closing down
-    if (_connection->closing()) return callback("Channel is in an error state, the AMQP connection is closing down");
+    if (_connection->closing()) return _errorCallback("Channel is in an error state, the AMQP connection is closing down");
 
     // the connection is already closed
-    if (_connection->closed()) return callback("Channel is in an error state, the AMQP connection has been closed");
+    if (_connection->closed()) return _errorCallback("Channel is in an error state, the AMQP connection has been closed");
    
     // direct call if channel is already in error state
-    callback("Channel is in error state, something went wrong with the AMQP connection");
+    _errorCallback("Channel is in error state, something went wrong with the AMQP connection");
 }
 
 /**
@@ -286,11 +285,12 @@ Deferred &ChannelImpl::declareExchange(const std::string &name, ExchangeType typ
     const char *exchangeType = "";
     
     // convert the exchange type into a string
-    if      (type == ExchangeType::fanout)          exchangeType = "fanout";
-    else if (type == ExchangeType::direct)          exchangeType = "direct";
-    else if (type == ExchangeType::topic)           exchangeType = "topic";
-    else if (type == ExchangeType::headers)         exchangeType = "headers";
-    else if (type == ExchangeType::consistent_hash) exchangeType = "x-consistent-hash";
+    if      (type == ExchangeType::fanout)                exchangeType = "fanout";
+    else if (type == ExchangeType::direct)                exchangeType = "direct";
+    else if (type == ExchangeType::topic)                 exchangeType = "topic";
+    else if (type == ExchangeType::headers)               exchangeType = "headers";
+    else if (type == ExchangeType::consistent_hash)       exchangeType = "x-consistent-hash";
+    else if (type == ExchangeType::message_deduplication) exchangeType = "x-message-deduplication";
 
     // the boolean options
     bool passive = (flags & AMQP::passive) != 0;
@@ -751,18 +751,21 @@ bool ChannelImpl::send(CopiedBuffer &&frame)
     {
         // we need to wait until the synchronous frame has
         // been processed, so queue the frame until it was
-        _queue.emplace(false, std::move(frame));
+        _queue.emplace(std::move(frame));
 
         // it was of course not actually sent but we pretend
         // that it was, because no error occured
         return true;
     }
 
+    // is this a synchronous frame?
+    bool syncframe = frame.synchronous();
+
     // send to tcp connection
     if (!_connection->send(std::move(frame))) return false;
     
-    // frame was sent, a copied buffer cannot be synchronous
-    _synchronous = false;
+    // frame was sent, if this was a synchronous frame, we now have to wait
+    _synchronous = syncframe;
     
     // done
     return true;
@@ -790,7 +793,7 @@ bool ChannelImpl::send(const Frame &frame)
     {
         // we need to wait until the synchronous frame has
         // been processed, so queue the frame until it was
-        _queue.emplace(frame.synchronous(), frame);
+        _queue.emplace(frame);
 
         // it was of course not actually sent but we pretend
         // that it was, because no error occured
@@ -799,7 +802,7 @@ bool ChannelImpl::send(const Frame &frame)
 
     // send to tcp connection
     if (!_connection->send(frame)) return false;
-    
+
     // frame was sent, if this was a synchronous frame, we now have to wait
     _synchronous = frame.synchronous();
     
@@ -822,7 +825,7 @@ uint32_t ChannelImpl::maxPayload() const
  *  Signal the channel that a synchronous operation was completed. After 
  *  this operation, waiting frames can be sent out.
  */
-void ChannelImpl::flush()
+bool ChannelImpl::flush()
 {
     // we are no longer waiting for synchronous operations
     _synchronous = false;
@@ -833,21 +836,27 @@ void ChannelImpl::flush()
     // send all frames while not in synchronous mode
     while (_connection && !_synchronous && !_queue.empty())
     {
-        // retrieve the first buffer and synchronous
-        auto &pair = _queue.front();
-
-        // mark as synchronous if necessary
-        _synchronous = pair.first;
-
-        // send it over the connection
-        _connection->send(std::move(pair.second));
-
-        // the user space handler may have destructed this channel object
-        if (!monitor.valid()) return;
+        // retrieve the front item
+        auto buffer = std::move(_queue.front());
 
         // remove from the list
         _queue.pop();
+
+        // is this a synchronous frame?
+        bool syncframe = buffer.synchronous();
+
+        // send to tcp connection
+        if (!_connection->send(std::move(buffer))) return false;
+
+        // the user space handler may have destructed this channel object
+        if (!monitor.valid()) return true;
+
+        // frame was sent, if this was a synchronous frame, we now have to wait
+        _synchronous = syncframe;
     }
+
+    // done
+    return true;
 }
 
 /**

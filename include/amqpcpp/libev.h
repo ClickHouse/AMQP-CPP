@@ -255,8 +255,9 @@ private:
                 // the server was inactive for a too long period of time, reset state
                 _next = _expire = 0.0; _timeout = 0;
                 
-                // close the connection because server was inactive
-                return (void)_connection->close();
+                // close the connection because server was inactive (we close it with immediate effect,
+                // because it was inactive so we cannot trust it to respect the AMQP close handshake)
+                return (void)_connection->close(true);
             }
             else if (now >= _next)
             {
@@ -267,12 +268,12 @@ private:
                 // sent only after _timout/2 seconds again _from now_ (no catching up)
                 _next = now + std::max(_timeout / 2, 1);
             }
-            
+
             // reset the timer to trigger again later
-            _timer.repeat = std::min(_next, _expire) - now;
-            
-            // restart the timer
-            ev_timer_again(_loop, &_timer);
+            ev_timer_set(&_timer, std::min(_next, _expire) - now, 0.0);
+
+            // and start it again
+            ev_timer_start(_loop, &_timer);
             
             // and because the timer is running again, we restore the refcounter
             ev_unref(_loop);
@@ -365,11 +366,16 @@ private:
             // because the server has just sent us some data, we will update the expire time too
             _expire = now + _timeout * 1.5;
 
+            // stop the existing timer (we have to stop it and restart it, because ev_timer_set() 
+            // on its own does not change the running timer) (note that we assume that the timer
+            // is already running and keeps on running, so no calls to ev_ref()/en_unref() here)
+            ev_timer_stop(_loop, &_timer);
+
             // find the earliest thing that expires
-            _timer.repeat = std::min(_next, _expire) - now;
-            
-            // restart the timer
-            ev_timer_again(_loop, &_timer);
+            ev_timer_set(&_timer, std::min(_next, _expire) - now, 0.0);
+
+            // and start it again
+            ev_timer_start(_loop, &_timer);
             
             // expose the accepted interval
             return _timeout;
@@ -454,19 +460,19 @@ private:
         return _wrappers.back();
     }
 
+protected:
     /**
      *  Method that is called by AMQP-CPP to register a filedescriptor for readability or writability
      *  @param  connection  The TCP connection object that is reporting
      *  @param  fd          The filedescriptor to be monitored
      *  @param  flags       Should the object be monitored for readability or writability?
      */
-    virtual void monitor(TcpConnection *connection, int fd, int flags) override final
+    virtual void monitor(TcpConnection *connection, int fd, int flags) override
     {
         // lookup the appropriate wrapper and start monitoring
         lookup(connection).monitor(fd, flags);
     }
 
-protected:
     /**
      *  Method that is called when the heartbeat timeout is negotiated between the server and the client. 
      *  @param  connection      The connection that suggested a heartbeat timeout
