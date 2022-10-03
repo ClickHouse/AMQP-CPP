@@ -1,7 +1,7 @@
 /**
  *  TcpResolver.h
  *
- *  Class that is used for the DNS lookup of the hostname of the RabbitMQ 
+ *  Class that is used for the DNS lookup of the hostname of the RabbitMQ
  *  server, and to make the initial connection
  *
  *  @author Emiel Bruijntjes <emiel.bruijntjes@copernica.com>
@@ -42,13 +42,13 @@ private:
      *  @var std::string
      */
     std::string _hostname;
-    
+
     /**
      *  Should we be using a secure connection?
      *  @var bool
      */
     bool _secure;
-    
+
     /**
      *  The portnumber to connect to
      *  @var uint16_t
@@ -60,13 +60,13 @@ private:
      *  @var int
      */
     int _timeout;
-    
+
     /**
      *  A pipe that is used to send back the socket that is connected to RabbitMQ
      *  @var Pipe
      */
     Pipe _pipe;
-    
+
     /**
      *  Possible error that occured
      *  @var std::string
@@ -96,24 +96,30 @@ private:
         {
             // check if we support openssl in the first place
             if (_secure && !OpenSSL::valid()) throw std::runtime_error("Secure connection cannot be established: libssl.so cannot be loaded");
-            
+
             // get address info
             AddressInfo addresses(_hostname.data(), _port, _order);
-    
+
             // the pollfd structure, needed for poll()
             pollfd fd;
-    
+
             // iterate over the addresses
             for (size_t i = 0; i < addresses.size(); ++i)
             {
                 // create the socket
                 _socket = socket(addresses[i]->ai_family, addresses[i]->ai_socktype, addresses[i]->ai_protocol);
-                
+
                 // move on on failure
                 if (_socket < 0) continue;
 
                 // turn socket into a non-blocking socket and set the close-on-exec bit
                 fcntl(_socket, F_SETFL, O_NONBLOCK | O_CLOEXEC);
+
+                // we set the 'keepalive' option so that we automatically detect if the peer is dead
+                int keepalive = 1;
+
+                // set the keepalive option
+                setsockopt(_socket, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive));
 
                 // try to connect non-blocking
                 if (connect(_socket, addresses[i]->ai_addr, addresses[i]->ai_addrlen) == 0) break;
@@ -122,7 +128,7 @@ private:
                 fd.fd = _socket;
                 fd.events = POLLOUT;
                 fd.revents = 0;
-                
+
                 // the return code
                 int ret = 0;
 
@@ -137,7 +143,7 @@ private:
 
                 // log the error for the time being
                 if (ret == 0) _error = "connection timed out";
-                
+
                 // otherwise, select might've failed
                 else if (ret < 0) _error = strerror(errno);
 
@@ -160,17 +166,17 @@ private:
 
                 // close socket because connect failed
                 ::close(_socket);
-                    
+
                 // socket no longer is valid
                 _socket = -1;
             }
-            
+
             // connection succeeded, mark socket as non-blocking
-            if (_socket >= 0) 
+            if (_socket >= 0)
             {
                 // we want to enable "nodelay" on sockets (otherwise all send operations are s-l-o-w
                 int optval = 1;
-                
+
                 // set the option
                 setsockopt(_socket, IPPROTO_TCP, TCP_NODELAY, &optval, sizeof(int));
 
@@ -184,7 +190,7 @@ private:
             // address could not be resolved, we ignore this for now, but store the error
             _error = error.what();
         }
-            
+
         // notify the master thread by sending a byte over the pipe, store error if this fails
         if (!_pipe.notify()) _error = strerror(errno);
     }
@@ -199,8 +205,8 @@ public:
      *  @param  timeout     timeout per connection attempt
      *  @param  order       How should we oreder the addresses of the host to connect to
      */
-    TcpResolver(TcpParent *parent, std::string hostname, uint16_t port, bool secure, int timeout, const ConnectionOrder &order) : 
-        TcpExtState(parent), 
+    TcpResolver(TcpParent *parent, std::string hostname, uint16_t port, bool secure, int timeout, const ConnectionOrder &order) :
+        TcpExtState(parent),
         _hostname(std::move(hostname)),
         _secure(secure),
         _port(port),
@@ -212,7 +218,7 @@ public:
 
         run();
     }
-    
+
     /**
      *  Destructor
      */
@@ -221,15 +227,16 @@ public:
         // stop monitoring the pipe filedescriptor
         _parent->onIdle(this, _pipe.in(), 0);
     }
-    
+
     /**
      *  Number of bytes in the outgoing buffer
      *  @return std::size_t
      */
     virtual std::size_t queued() const override { return _buffer.size(); }
-    
+
     /**
      *  Proceed to the next state
+     *  @param  monitor         object that checks if the connection still exists
      *  @return TcpState *
      */
     TcpState *proceed(const Monitor &monitor)
@@ -239,16 +246,16 @@ public:
         {
             // socket should be connected by now
             if (_socket < 0) throw std::runtime_error(_error.data());
-        
+
             // report that the network-layer is connected
             _parent->onConnected(this);
 
             // handler callback might have destroyed connection
             if (!monitor.valid()) return nullptr;
-            
+
             // if we need a secure connection, we move to the tls handshake (this could throw)
             if (_secure) return new SslHandshake(this, std::move(_hostname), std::move(_buffer));
-            
+
             // otherwise we have a valid regular tcp connection
             else return new TcpConnected(this, std::move(_buffer));
         }
@@ -256,7 +263,7 @@ public:
         {
             // report error
             _parent->onError(this, error.what(), false);
-        
+
             // handler callback might have destroyed connection
             if (!monitor.valid()) return nullptr;
 
@@ -264,7 +271,7 @@ public:
             return new TcpClosed(this);
         }
     }
-    
+
     /**
      *  Wait for the resolver to be ready
      *  @param  monitor     Object to check if connection still exists
@@ -280,7 +287,7 @@ public:
         // proceed to the next state
         return proceed(monitor);
     }
-    
+
     /**
      *  Send data over the connection
      *  @param  buffer      buffer to send

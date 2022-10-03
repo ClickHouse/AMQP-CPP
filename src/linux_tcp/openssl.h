@@ -56,6 +56,7 @@ uint32_t SSL_CTX_set_mode_func(SSL_CTX *ctx, uint32_t mode);
 int      SSL_CTX_set_default_verify_paths(SSL_CTX *ctx);
 
 void     ERR_clear_error(void);
+void     ERR_print_errors_cb(int (*cb)(const char *str, size_t len, void *u), void *u);
 
 /**
  *  End of namespace
