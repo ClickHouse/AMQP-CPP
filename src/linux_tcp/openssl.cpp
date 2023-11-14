@@ -62,13 +62,7 @@ bool valid()
 const SSL_METHOD *TLS_client_method()
 {
     if (handle == RTLD_DEFAULT)
-    {
-        const auto * method = ::TLS_client_method();
-        if (method == nullptr)
-            method = ::SSLv23_client_method();
-
-        return method;
-    }
+        return ::TLS_client_method();
 
     // create a function that loads the method
     static Function<decltype(TLS_client_method)> func(handle, "TLS_client_method");
