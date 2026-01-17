@@ -63,6 +63,12 @@ private:
             // retrieve the connection
             TcpConnection *connection = static_cast<TcpConnection*>(handle->data);
 
+            // check if the connection is still valid (it might have been destroyed while the event was pending)
+            if (!connection) return;
+
+            // don't process events for a connection that is already closed
+            if (connection->closed()) return;
+
             // tell the connection that its filedescriptor is active
             int fd = -1;
             uv_fileno(reinterpret_cast<uv_handle_t*>(handle), &fd);
@@ -105,6 +111,9 @@ private:
          */
         virtual ~Watcher()
         {
+            // clear the connection pointer so any pending callbacks see nullptr
+            _poll->data = nullptr;
+
             // stop the watcher
             uv_poll_stop(_poll);
 
