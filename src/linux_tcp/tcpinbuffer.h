@@ -16,7 +16,8 @@
  *  Dependencies
  */
  #include <openssl/ssl.h>
- 
+ #include <algorithm>
+
 /**
  *  Beginnig of namespace
  */
@@ -27,26 +28,38 @@ namespace AMQP {
  */
 class TcpInBuffer : public ByteBuffer
 {
+private:
+    /**
+     *  Number of bytes that are allocated for the buffer (the _size member of the base
+     *  class only tells how many of them are filled with data)
+     *  @var size_t
+     */
+    size_t _capacity;
+
 public:
     /**
      *  Constructor
      *  Note that we pass 0 to the constructor because the buffer seems to be empty
      *  @param  size        initial size to allocated
      */
-    TcpInBuffer(size_t size) : ByteBuffer((char *)malloc(size), 0) {}
-    
+    TcpInBuffer(size_t size) : ByteBuffer((char *)malloc(size), 0), _capacity(size) {}
+
     /**
      *  No copy'ing
      *  @param  that        object to copy
      */
     TcpInBuffer(const TcpInBuffer &that) = delete;
-    
+
     /**
      *  Move constructor
      *  @param  that
      */
-    TcpInBuffer(TcpInBuffer &&that) : ByteBuffer(std::move(that)) {}
-    
+    TcpInBuffer(TcpInBuffer &&that) : ByteBuffer(std::move(that)), _capacity(that._capacity)
+    {
+        // the other object no longer owns memory
+        that._capacity = 0;
+    }
+
     /**
      *  Destructor
      */
@@ -67,11 +80,15 @@ public:
         
         // call base
         ByteBuffer::operator=(std::move(that));
-        
+
+        // take over the allocated size too
+        _capacity = that._capacity;
+        that._capacity = 0;
+
         // done
         return *this;
     }
-    
+
     /**
      *  Reallocate date
      *  @param  size
@@ -79,9 +96,36 @@ public:
     void reallocate(size_t size)
     {
         // update data
-        _data = (char *)realloc((void *)_data, size);
+        auto *data = (char *)realloc((void *)_data, size);
+
+        // leave the old buffer in place when the allocation failed, so that we do not
+        // end up with a null buffer that is still considered to have capacity
+        if (data == nullptr) return;
+
+        // remember the new buffer and how much room it has
+        _data = data;
+        _capacity = size;
    }
-    
+
+    /**
+     *  Number of bytes that are still free in the buffer
+     *  @return size_t
+     */
+    size_t room() const
+    {
+        return _capacity > _size ? _capacity - _size : 0;
+    }
+
+    /**
+     *  Number of bytes that we still need to complete the frame that is being received
+     *  @param  expected        total number of bytes that the library expects
+     *  @return uint32_t
+     */
+    uint32_t wanted(uint32_t expected) const
+    {
+        return expected > _size ? expected - (uint32_t)_size : 0;
+    }
+
     /**
      *  Receive data from a socket
      *  @param  socket          socket to read from
@@ -99,10 +143,10 @@ public:
         // if no bytes are available, it could mean that the connection was closed
         // by the remote client, so we do have to call read() anyway, assume a default buffer
         if (available == 0) available = 1;
-        
-        // number of bytes to read
-        size_t bytes = std::min((uint32_t)(expected - _size), available);
-        
+
+        // number of bytes to read, never more than what is still free in the buffer
+        size_t bytes = std::min({ (size_t)wanted(expected), (size_t)available, room() });
+
         // read data into the buffer
         auto result = read(socket, (void *)(_data + _size), bytes);
         
@@ -122,8 +166,8 @@ public:
     ssize_t receivefrom(SSL *ssl, uint32_t expected)
     {
         // number of bytes to that still fit in the buffer
-        size_t bytes = expected - _size;
-        
+        size_t bytes = std::min((size_t)wanted(expected), room());
+
         // read data
         auto result = OpenSSL::SSL_read(ssl, (void *)(_data + _size), bytes);
         

@@ -292,14 +292,29 @@ public:
     }
 
     /**
+     *  The smallest frame size that is allowed by the AMQP protocol, and the size
+     *  that is used when the peer does not impose a limit of its own.
+     *  @var uint32_t
+     */
+    static constexpr uint32_t MIN_FRAME_SIZE = 4096;
+
+    /**
      *  Store the max number of channels and max number of frames
+     *
+     *  In the AMQP protocol a max frame size of zero means "no limit", but this library
+     *  uses the max frame size as the capacity of the buffer that holds an incoming frame,
+     *  and as the upper bound that incoming frames are validated against. Storing zero
+     *  would therefore disable that validation while leaving the buffer at its initial
+     *  size, so a peer could make us read a frame far beyond the end of the buffer.
+     *  For that reason the value is never allowed to drop below the protocol minimum.
+     *
      *  @param  channels    max number of channels
      *  @param  size        max frame size
      */
     void setCapacity(uint16_t channels, uint32_t size)
     {
         _maxChannels = channels;
-        _maxFrame = size;
+        _maxFrame = size < MIN_FRAME_SIZE ? MIN_FRAME_SIZE : size;
     }
 
     /**
