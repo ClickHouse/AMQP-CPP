@@ -299,6 +299,16 @@ public:
     static constexpr uint32_t MIN_FRAME_SIZE = 4096;
 
     /**
+     *  The largest frame size we accept from the peer. The value doubles as the size of the
+     *  receive buffer, and a peer may propose up to 2^32-1, so without an upper bound a peer
+     *  could make us allocate multiple gigabytes per connection. Real brokers use far smaller
+     *  frames (RabbitMQ's default is 131072), so this generous cap removes the
+     *  memory-exhaustion vector while staying compatible.
+     *  @var uint32_t
+     */
+    static constexpr uint32_t MAX_FRAME_SIZE = 128 * 1024 * 1024;
+
+    /**
      *  Store the max number of channels and max number of frames
      *
      *  In the AMQP protocol a max frame size of zero means "no limit", but this library
@@ -306,7 +316,9 @@ public:
      *  and as the upper bound that incoming frames are validated against. Storing zero
      *  would therefore disable that validation while leaving the buffer at its initial
      *  size, so a peer could make us read a frame far beyond the end of the buffer.
-     *  For that reason the value is never allowed to drop below the protocol minimum.
+     *  For that reason the value is clamped to [MIN_FRAME_SIZE, MAX_FRAME_SIZE]: never below the
+     *  protocol minimum, and never above a sane upper bound (an unbounded value would let a peer
+     *  make us allocate multiple gigabytes for the receive buffer).
      *
      *  @param  channels    max number of channels
      *  @param  size        max frame size
@@ -314,7 +326,9 @@ public:
     void setCapacity(uint16_t channels, uint32_t size)
     {
         _maxChannels = channels;
-        _maxFrame = size < MIN_FRAME_SIZE ? MIN_FRAME_SIZE : size;
+        if (size < MIN_FRAME_SIZE) _maxFrame = MIN_FRAME_SIZE;
+        else if (size > MAX_FRAME_SIZE) _maxFrame = MAX_FRAME_SIZE;
+        else _maxFrame = size;
     }
 
     /**
