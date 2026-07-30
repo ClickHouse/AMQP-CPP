@@ -42,7 +42,10 @@ public:
      *  Note that we pass 0 to the constructor because the buffer seems to be empty
      *  @param  size        initial size to allocated
      */
-    TcpInBuffer(size_t size) : ByteBuffer((char *)malloc(size), 0), _capacity(size) {}
+    TcpInBuffer(size_t size)
+        // if malloc failed, `_data` is null and the buffer has no room; reflecting that in
+        // `_capacity` keeps room()/receivefrom from treating a null buffer as writable
+        : ByteBuffer((char *)malloc(size), 0), _capacity(_data ? size : 0) {}
 
     /**
      *  No copy'ing
