@@ -17,6 +17,7 @@
  */
  #include <openssl/ssl.h>
  #include <algorithm>
+ #include <cerrno>
 
 /**
  *  Beginnig of namespace
@@ -137,6 +138,10 @@ public:
      */
     ssize_t receivefrom(int socket, uint32_t expected)
     {
+        // fail close if the initial allocation failed: there is no storage to read into,
+        // and `_data + _size` may not even be formed from a null buffer
+        if (_data == nullptr) { errno = ENOMEM; return -1; }
+
         // find out how many bytes are available
         uint32_t available = 0;
         
@@ -168,6 +173,10 @@ public:
      */
     ssize_t receivefrom(SSL *ssl, uint32_t expected)
     {
+        // fail close if the initial allocation failed, as above; the caller passes the
+        // negative result to SSL_get_error, which turns it into SSL_ERROR_SYSCALL
+        if (_data == nullptr) { errno = ENOMEM; return -1; }
+
         // number of bytes to that still fit in the buffer
         size_t bytes = std::min((size_t)wanted(expected), room());
 
