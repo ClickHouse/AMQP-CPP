@@ -131,17 +131,23 @@ public:
      */
     virtual bool process(ConnectionImpl *connection) override
     {
-        // remember this in the connection
+        // remember this in the connection - the connection refuses a max frame size that is
+        // below the protocol minimum (a server is allowed to propose zero, meaning "no limit",
+        // but we can not hold a frame of unlimited size in our buffer)
         connection->setCapacity(channelMax(), frameMax());
-        
+
+        // the server must be told about the limit that we settled on, otherwise it could send
+        // us frames that we consider too big, and the connection would be broken off
+        uint32_t negotiated = connection->maxFrame();
+
         // theoretically it is possible that the connection object gets destructed between sending the messages
         Monitor monitor(connection);
-        
-        // store the heartbeat the server wants 
+
+        // store the heartbeat the server wants
         uint16_t interval = connection->setHeartbeat(heartbeat());
 
         // send it back
-        connection->send(ConnectionTuneOKFrame(channelMax(), frameMax(), interval));
+        connection->send(ConnectionTuneOKFrame(channelMax(), negotiated, interval));
         
         // check if the connection object still exists
         if (!monitor.valid()) return true;
