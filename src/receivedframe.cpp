@@ -96,8 +96,12 @@ ReceivedFrame::ReceivedFrame(const Buffer &buffer, uint32_t max) : InBuffer(buff
     _channel = nextUint16();
     _payloadSize = nextUint32();
 
-    // is the frame size bigger than the max frame size?
-    if (max > 0 && _payloadSize > max - 8) throw ProtocolException("frame size exceeded");
+    // is the frame size bigger than the max frame size? a max of zero is not treated as
+    // "no limit" here: the max frame size doubles as the capacity of the buffer that the
+    // frame is read into, so accepting an arbitrary payload size would let a malicious
+    // peer drive a read beyond the end of that buffer
+    uint32_t effective_max = max < ConnectionImpl::MIN_FRAME_SIZE ? ConnectionImpl::MIN_FRAME_SIZE : max;
+    if (_payloadSize > effective_max - 8) throw ProtocolException("frame size exceeded");
 
     // check if the buffer is big enough to contain all data
     if (!complete()) return;

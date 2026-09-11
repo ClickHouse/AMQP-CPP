@@ -78,12 +78,6 @@ private:
      *  @var TcpBuffer
      */
     TcpOutBuffer _buffer;
-    
-    /**
-     *  Thread in which the DNS lookup occurs
-     *  @var std::thread
-     */
-    std::thread _thread;
 
     /**
      *  How should the addresses be ordered when we want to connect
@@ -221,12 +215,8 @@ public:
     {
         // tell the event loop to monitor the filedescriptor of the pipe
         parent->onIdle(this, _pipe.in(), readable);
-        
-        // we can now start the thread (must be started after filedescriptor is monitored!)
-        std::thread thread(std::bind(&TcpResolver::run, this));
-        
-        // store thread in member
-        _thread.swap(thread);
+
+        run();
     }
     
     /**
@@ -236,9 +226,6 @@ public:
     {
         // stop monitoring the pipe filedescriptor
         _parent->onIdle(this, _pipe.in(), 0);
-
-        // wait for the thread to be ready
-        if (_thread.joinable()) _thread.join();
     }
     
     /**
@@ -257,12 +244,6 @@ public:
         // prevent exceptions
         try
         {
-            // the other thread must be ready by now, so we join it, which also guarantees us
-            // that the memory of the two threads have been synchronized (without this call
-            // it is possible that the memory of the threads have not been synchronized, and
-            // _socket has not yet been set)
-            _thread.join();
-            
             // socket should be connected by now
             if (_socket < 0) throw std::runtime_error(_error.data());
         
