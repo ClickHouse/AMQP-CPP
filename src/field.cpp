@@ -10,6 +10,34 @@
  */
 namespace AMQP {
 
+namespace {
+
+/**
+ *  Nested tables and arrays are decoded recursively, so bound their nesting depth.
+ */
+constexpr size_t maxNestingDepth = 64;
+thread_local size_t nestingDepth = 0;
+
+class NestingGuard
+{
+public:
+    NestingGuard()
+    {
+        if (nestingDepth >= maxNestingDepth) throw ProtocolException("field table nested too deeply");
+        ++nestingDepth;
+    }
+
+    ~NestingGuard()
+    {
+        --nestingDepth;
+    }
+
+    NestingGuard(const NestingGuard &) = delete;
+    NestingGuard &operator=(const NestingGuard &) = delete;
+};
+
+}
+
 /**
  *  Decode a field by fetching a type and full field from a frame
  *  The returned field is allocated on the heap!
@@ -39,9 +67,9 @@ std::unique_ptr<Field> Field::decode(InBuffer &frame)
         case 'D':   return std::unique_ptr<Field>(new DecimalField(frame));
         case 's':   return std::unique_ptr<Field>(new ShortString(frame));
         case 'S':   return std::unique_ptr<Field>(new LongString(frame));
-        case 'A':   return std::unique_ptr<Field>(new Array(frame));
+        case 'A':   { NestingGuard guard; return std::unique_ptr<Field>(new Array(frame)); }
         case 'T':   return std::unique_ptr<Field>(new Timestamp(frame));
-        case 'F':   return std::unique_ptr<Field>(new Table(frame));
+        case 'F':   { NestingGuard guard; return std::unique_ptr<Field>(new Table(frame)); }
         case 'V':   return std::unique_ptr<Field>(new VoidField(frame));
         default:    return nullptr;
     }
